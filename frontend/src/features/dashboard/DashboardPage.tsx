@@ -2,6 +2,7 @@ import {
   Boxes,
   Building2,
   CircleAlert,
+  CircleGauge,
   Pill,
   Timer,
   Truck,
@@ -79,6 +80,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { label: 'Medicines', value: summary.medicines, icon: Pill },
+            { label: 'Low stock', value: summary.low_stock_medicines, icon: CircleGauge, tone: 'warning' as const },
             { label: 'Stock units', value: summary.stock_units, icon: Boxes },
             { label: 'Branches', value: summary.branches, icon: Building2 },
             { label: 'Suppliers', value: summary.suppliers, icon: Truck },

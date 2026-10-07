@@ -40,6 +40,7 @@ class StorageCondition(models.TextChoices):
 
 class BatchStatus(models.TextChoices):
     AVAILABLE = "available", "Available"
+    OUT_OF_STOCK = "out_of_stock", "Out of Stock"
     RESERVED = "reserved", "Reserved"
     EXPIRED = "expired", "Expired"
     RECALLED = "recalled", "Recalled"

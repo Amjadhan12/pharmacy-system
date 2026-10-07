@@ -1,7 +1,7 @@
 """Medicine catalog, dosage forms, manufacturers and inventory batches."""
 
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from rest_framework import generics, permissions
 
 from apps.accounts.tenancy import accessible_branches
@@ -53,12 +53,18 @@ class MedicineListView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self) -> QuerySet:
-        # Active by default; ``is_active=false`` returns everything.
+        # Active by default; explicit filters support the full catalogue screen.
         qs = Medicine.objects.all()
         category = self.request.query_params.get("category")
         manufacturer = self.request.query_params.get("manufacturer")
         route = self.request.query_params.get("route")
         prescription = self.request.query_params.get("prescription_required")
+        is_active = self.request.query_params.get("is_active")
+        search = self.request.query_params.get("search")
+        if is_active is None:
+            qs = qs.filter(is_active=True)
+        else:
+            qs = qs.filter(is_active=is_active.lower() == "true")
         if category:
             qs = qs.filter(category_id=category)
         if manufacturer:
@@ -67,6 +73,13 @@ class MedicineListView(generics.ListCreateAPIView):
             qs = qs.filter(route=route)
         if prescription is not None:
             qs = qs.filter(prescription_required=(prescription == "true"))
+        if search:
+            qs = qs.filter(
+                Q(generic_name__icontains=search)
+                | Q(brand_name__icontains=search)
+                | Q(barcode__icontains=search)
+                | Q(gtin__icontains=search)
+            )
         return qs.select_related("category", "manufacturer", "dosage_form")
 
 
@@ -102,6 +115,10 @@ class MedicineRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
             "category", "manufacturer", "dosage_form"
         )
 
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.save(update_fields=["is_active", "updated_at"])
+
 
 class BatchListView(generics.ListCreateAPIView):
     """Inventory batches (stock on hand per branch). FEFO default ordering.
@@ -125,6 +142,14 @@ class BatchListView(generics.ListCreateAPIView):
             qs = qs.filter(branch_id=branch)
         if status:
             qs = qs.filter(status=status)
+        search = self.request.query_params.get("search")
+        if search:
+            qs = qs.filter(
+                Q(batch_number__icontains=search)
+                | Q(barcode__icontains=search)
+                | Q(medicine__generic_name__icontains=search)
+                | Q(medicine__brand_name__icontains=search)
+            )
         return qs.select_related("medicine", "branch", "warehouse")
 
     def perform_create(self, serializer):

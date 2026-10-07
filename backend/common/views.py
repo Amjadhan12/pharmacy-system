@@ -56,12 +56,29 @@ class DashboardSummaryView(APIView):
         branches = accessible_branches(request.user)
         batches = MedicineBatch.objects.filter(branch__in=branches)
         today = timezone.localdate()
+        active_medicines = Medicine.objects.filter(is_active=True)
+        stock_by_medicine = (
+            batches.filter(status="available", expiry_date__gte=today)
+            .values("medicine_id")
+            .annotate(on_hand=Sum("quantity"))
+        )
+        stock_levels = {
+            row["medicine_id"]: row["on_hand"] or 0 for row in stock_by_medicine
+        }
+        low_stock_count = sum(
+            stock_levels.get(medicine_id, 0) < reorder_level
+            for medicine_id, reorder_level in active_medicines.values_list(
+                "id", "reorder_level"
+            )
+        )
 
         return Response(
             {
                 "pharmacies": pharmacies.count(),
                 "branches": branches.count(),
-                "medicines": Medicine.objects.filter(is_active=True).count(),
+                "medicines": active_medicines.count(),
+                "active_medicines": active_medicines.count(),
+                "low_stock_medicines": low_stock_count,
                 "batches": batches.count(),
                 "stock_units": batches.aggregate(total=Sum("quantity"))["total"] or 0,
                 "expired_batches": batches.filter(expiry_date__lt=today).count(),

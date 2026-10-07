@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import date
 
 from django.db import transaction
 from django.core.exceptions import ValidationError
@@ -16,8 +17,9 @@ def record_stock_movement(
     unit_price: Decimal = Decimal("0"),
     reference: str = "",
     created_by=None,
+    direction: str | None = None,
 ):
-    """Atomically append an inventory movement and update the batch quantity.
+    """Append a stock movement and update its batch under a row lock.
 
     Raises ``ValidationError`` when a dispatch would drive the batch quantity
     negative (negative-stock protection).
@@ -25,39 +27,58 @@ def record_stock_movement(
     qty = int(quantity)
     if qty <= 0:
         raise ValidationError("Quantity must be a positive integer.")
+    if transaction_type not in {"receipt", "dispatch", "adjustment", "return"}:
+        raise ValidationError(f"Unsupported stock movement: {transaction_type}.")
+    movement_direction = direction or (
+        "out" if transaction_type == "dispatch" else "in"
+    )
+    if movement_direction not in {"in", "out"}:
+        raise ValidationError("Direction must be 'in' or 'out'.")
+    if transaction_type == "dispatch":
+        movement_direction = "out"
+    if transaction_type == "receipt" or transaction_type == "return":
+        movement_direction = "in"
 
     with transaction.atomic():
-        if transaction_type == "dispatch":
-            available = batch.quantity
+        locked_batch = MedicineBatch.objects.select_for_update().select_related(
+            "medicine"
+        ).get(pk=batch.pk)
+        if locked_batch.branch_id != branch.pk:
+            raise ValidationError("Batch does not belong to the selected branch.")
+        if warehouse and warehouse.branch_id != branch.pk:
+            raise ValidationError("Warehouse does not belong to the selected branch.")
+        if movement_direction == "out":
+            if (
+                transaction_type == "dispatch"
+                and (
+                    locked_batch.status != "available"
+                    or locked_batch.expiry_date < date.today()
+                )
+            ):
+                raise ValidationError("Expired or unavailable batches cannot be dispatched.")
+            available = locked_batch.quantity
             if qty > available:
                 raise ValidationError(
-                    f"Insufficient stock for batch {batch.batch_number}: "
+                    f"Insufficient stock for batch {locked_batch.batch_number}: "
                     f"available {available}, requested {qty}."
                 )
-            batch.quantity -= qty
-            batch.save(update_fields=["quantity"])
-        elif transaction_type == "receipt":
-            batch.quantity += qty
-            batch.save(update_fields=["quantity"])
-        elif transaction_type == "return":
-            # A return restores stock to the batch.
-            batch.quantity += qty
-            batch.save(update_fields=["quantity"])
-        elif transaction_type == "adjustment":
-            # Caller is expected to pass the signed magnitude; this moves by
-            # ``qty`` regardless of direction.
-            new_qty = batch.quantity + qty
-            if new_qty < 0:
-                raise ValidationError("Adjustment would drive the batch quantity negative.")
-            batch.quantity = new_qty
-            batch.save(update_fields=["quantity"])
+            locked_batch.quantity -= qty
         else:
-            raise ValidationError(f"Unknown transaction type: {transaction_type}")
+            locked_batch.quantity += qty
 
-        transaction = InventoryTransaction.objects.create(
+        if locked_batch.quantity == 0:
+            locked_batch.status = "out_of_stock"
+        elif locked_batch.expiry_date < date.today():
+            locked_batch.status = "expired"
+        elif locked_batch.status in {"out_of_stock", "expired"}:
+            locked_batch.status = "available"
+        locked_batch.save(update_fields=["quantity", "status"])
+
+        movement = InventoryTransaction.objects.create(
             transaction_type=transaction_type,
-            batch=batch,
-            medicine=batch.medicine,
+            direction=movement_direction,
+            batch=locked_batch,
+            medicine=locked_batch.medicine,
             branch=branch,
             warehouse=warehouse,
             quantity=qty,
@@ -66,16 +87,22 @@ def record_stock_movement(
             created_by=created_by,
         )
 
-    return transaction
+    return movement
 
 
 def fifo_batches(medicine, branch, qty, status="available"):
     """Return (allocation list, remaining) ordered by earliest expiry (FEFO)."""
+    if int(qty) <= 0:
+        raise ValidationError("Quantity must be a positive integer.")
     allocation = []
     remaining = int(qty)
     batches = (
         MedicineBatch.objects.filter(
-            medicine=medicine, branch=branch, status=status
+            medicine=medicine,
+            branch=branch,
+            status=status,
+            expiry_date__gte=date.today(),
+            quantity__gt=0,
         )
         .order_by("expiry_date", "id")
         .select_related("branch", "warehouse")
@@ -94,4 +121,3 @@ def fifo_batches(medicine, branch, qty, status="available"):
             f"requested {qty}."
         )
     return allocation, remaining
-

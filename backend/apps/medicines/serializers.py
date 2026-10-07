@@ -69,6 +69,7 @@ class MedicineSerializer(serializers.ModelSerializer):
             "gtin",
             "description",
             "prescription_required",
+            "reorder_level",
             "storage_condition",
             "is_active",
             "created_at",

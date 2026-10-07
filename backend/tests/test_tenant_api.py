@@ -30,10 +30,12 @@ class TenantApiTests(TestCase):
             password="Tenant-Pass-123",
             role=role,
         )
+        owner_role = Role.objects.create(name="Pharmacy Owner", code="pharmacy_owner")
         other_owner = User.objects.create_user(
             username="other-owner",
             email="other-owner@pharmafin.test",
             password="Tenant-Pass-123",
+            role=owner_role,
         )
         cls.pharmacy = Pharmacy.objects.create(
             owner=other_owner, name="Assigned Pharmacy", country="AF"
@@ -64,6 +66,7 @@ class TenantApiTests(TestCase):
             generic_name="Tenant Test Medicine",
             category=category,
             dosage_form=dosage_form,
+            reorder_level=20,
         )
         cls.batch = MedicineBatch.objects.create(
             medicine=cls.medicine,
@@ -167,6 +170,8 @@ class TenantApiTests(TestCase):
         self.assertEqual(data["pharmacies"], 1)
         self.assertEqual(data["branches"], 1)
         self.assertEqual(data["medicines"], 1)
+        self.assertEqual(data["active_medicines"], 1)
+        self.assertEqual(data["low_stock_medicines"], 1)
         self.assertEqual(data["batches"], 1)
         self.assertEqual(data["stock_units"], 12)
         self.assertEqual(data["expiring_batches"], 1)
@@ -192,3 +197,72 @@ class TenantApiTests(TestCase):
         ):
             with self.subTest(path=path):
                 self.assertEqual(self.get_results(path), [])
+
+    def test_catalog_search_and_supplier_customer_crud(self):
+        medicines = self.get_results(
+            "/api/v1/medicines/medicines/?search=Tenant%20Test"
+        )
+        self.assertEqual([row["id"] for row in medicines], [self.medicine.id])
+
+        owner_client = APIClient()
+        owner_client.force_authenticate(user=self.pharmacy.owner)
+        supplier_response = owner_client.post(
+            "/api/v1/suppliers/",
+            {
+                "pharmacy": self.pharmacy.id,
+                "name": "New Tenant Supplier",
+                "currency": "AFN",
+            },
+            format="json",
+        )
+        self.assertEqual(supplier_response.status_code, 201, supplier_response.content)
+        supplier_id = supplier_response.json()["data"]["id"]
+        update_response = owner_client.patch(
+            f"/api/v1/suppliers/{supplier_id}/",
+            {"phone": "+93 700 999 999"},
+            format="json",
+        )
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.json()["data"]["phone"], "+93 700 999 999")
+        self.assertEqual(
+            owner_client.delete(f"/api/v1/suppliers/{supplier_id}/").status_code,
+            204,
+        )
+
+        customer_response = owner_client.post(
+            "/api/v1/customers/",
+            {
+                "pharmacy": self.pharmacy.id,
+                "first_name": "New",
+                "last_name": "Tenant Customer",
+                "email": "new-customer@pharmafin.test",
+            },
+            format="json",
+        )
+        self.assertEqual(customer_response.status_code, 201, customer_response.content)
+        customer_id = customer_response.json()["data"]["id"]
+        update_response = owner_client.patch(
+            f"/api/v1/customers/{customer_id}/",
+            {"phone": "+93 700 888 888"},
+            format="json",
+        )
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.json()["data"]["phone"], "+93 700 888 888")
+
+    def test_users_cannot_create_or_update_other_pharmacy_records(self):
+        response = self.client.post(
+            "/api/v1/suppliers/",
+            {
+                "pharmacy": self.other_account.pharmacy_id,
+                "name": "Cross-tenant Supplier",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+        response = self.client.patch(
+            f"/api/v1/customers/{self.customer.id}/",
+            {"pharmacy": self.other_account.pharmacy_id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)

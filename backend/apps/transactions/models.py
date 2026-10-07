@@ -15,10 +15,12 @@ class InventoryTransaction(TimeStampedModel):
         ("adjustment", "Manual adjustment"),
         ("return", "Customer/supplier return"),
     ]
+    DIRECTIONS = [("in", "Stock in"), ("out", "Stock out")]
 
     transaction_type = models.CharField(
         max_length=20, choices=TRANSACTION_TYPES, db_index=True
     )
+    direction = models.CharField(max_length=3, choices=DIRECTIONS, default="in")
     batch = models.ForeignKey(
         "medicines.MedicineBatch",
         on_delete=models.CASCADE,

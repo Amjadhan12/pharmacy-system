@@ -98,6 +98,7 @@ class Medicine(TimeStampedModel):
     )
     description = models.TextField(blank=True)
     prescription_required = models.BooleanField(default=False)
+    reorder_level = models.PositiveIntegerField(default=10)
     storage_condition = models.CharField(
         max_length=30,
         choices=StorageCondition.choices,
@@ -199,4 +200,3 @@ class MedicineBatch(TimeStampedModel):
         from datetime import date
 
         return self.expiry_date < date.today()
-
