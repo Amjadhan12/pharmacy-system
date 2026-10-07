@@ -20,11 +20,20 @@ User = get_user_model()
 
 class MedicineCatalogTests(TestCase):
     def setUp(self):
+        self.owner = User.objects.create_user(
+            username="catalog-owner",
+            email="catalog-owner@pharmafin.test",
+            password="catalog-test-password",
+        )
+        self.pharmacy = Pharmacy.objects.create(
+            owner=self.owner, name="Catalog Test Pharmacy", country="AF"
+        )
         self.category = MedicineCategory.objects.create(
             name="Analgesics", code="analgesics"
         )
         self.form = DosageForm.objects.create(name="Tablet", code="tablet")
         self.medicine = Medicine.objects.create(
+            pharmacy=self.pharmacy,
             generic_name="Paracetamol",
             brand_name="Panadol",
             category=self.category,
@@ -41,6 +50,7 @@ class MedicineCatalogTests(TestCase):
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 Medicine.objects.create(
+                    pharmacy=self.pharmacy,
                     generic_name="Ibuprofen",
                     category=self.category,
                     dosage_form=self.form,
@@ -52,6 +62,7 @@ class MedicineCatalogTests(TestCase):
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 Medicine.objects.create(
+                    pharmacy=self.pharmacy,
                     generic_name="Aspirin",
                     category=self.category,
                     dosage_form=self.form,
@@ -61,12 +72,35 @@ class MedicineCatalogTests(TestCase):
     def test_manufacturer_optional_link(self):
         maker = Manufacturer.objects.create(name="GSK")
         medicine = Medicine.objects.create(
+            pharmacy=self.pharmacy,
             generic_name="Augmentin",
             category=self.category,
             dosage_form=self.form,
             manufacturer=maker,
         )
         self.assertEqual(medicine.manufacturer.name, "GSK")
+
+    def test_same_barcode_can_exist_in_separate_pharmacies(self):
+        self.medicine.barcode = "SHARED-PRODUCT-001"
+        self.medicine.save(update_fields=["barcode"])
+        other_owner = User.objects.create_user(
+            username="other-catalog-owner",
+            email="other-catalog-owner@pharmafin.test",
+            password="catalog-test-password",
+        )
+        other_pharmacy = Pharmacy.objects.create(
+            owner=other_owner, name="Other Catalog Pharmacy", country="AF"
+        )
+
+        medicine = Medicine.objects.create(
+            pharmacy=other_pharmacy,
+            generic_name="Paracetamol",
+            category=self.category,
+            dosage_form=self.form,
+            barcode="SHARED-PRODUCT-001",
+        )
+
+        self.assertNotEqual(medicine.pharmacy_id, self.medicine.pharmacy_id)
 
 
 class MedicineBatchTests(TestCase):

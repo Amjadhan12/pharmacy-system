@@ -6,11 +6,15 @@ export interface DashboardSummary {
   branches: number
   medicines: number
   active_medicines: number
+  total_stock_units: number
+  available_stock_units: number
   low_stock_medicines: number
+  out_of_stock_medicines: number
   batches: number
   stock_units: number
   expired_batches: number
   expiring_batches: number
+  categories: number
   suppliers: number
   customers: number
 }

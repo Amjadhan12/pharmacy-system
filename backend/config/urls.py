@@ -18,6 +18,7 @@ urlpatterns = [
     path("api/v1/customers/", include("apps.customers.urls")),
     path("api/v1/accounting/", include("apps.accounting.urls")),
     path("api/v1/transactions/", include("apps.transactions.urls")),
+    path("api/v1/inventory/", include("apps.transactions.inventory_urls")),
 ]
 
 if settings.DEBUG:  # pragma: no cover

@@ -4,6 +4,8 @@ import DataModulePage, { type DataModuleField } from '@/components/module/DataMo
 import ModulePage from '@/components/module/ModulePage'
 import LoginPage from '@/features/auth/LoginPage'
 import DashboardPage from '@/features/dashboard/DashboardPage'
+import InventoryPage from '@/features/inventory/InventoryPage'
+import MedicineDetailPage from '@/features/medicines/MedicineDetailPage'
 import { paths } from './paths'
 
 /**
@@ -18,6 +20,13 @@ interface ModuleRoute {
   columns?: { key: string; label: string }[]
   fields?: DataModuleField[]
   canWriteRoles?: string[]
+  filters?: {
+    key: string
+    label: string
+    choices?: { value: string; label: string }[]
+    lookup?: string
+  }[]
+  rowDetailPath?: string
 }
 
 const modules: ModuleRoute[] = [
@@ -26,7 +35,20 @@ const modules: ModuleRoute[] = [
     path: paths.medicines,
     title: 'Medicines',
     apiPath: '/medicines/medicines/',
+    rowDetailPath: '/medicines/',
     canWriteRoles: ['pharmacy_owner', 'pharmacy_manager', 'pharmacist', 'inventory_manager'],
+    filters: [
+      { key: 'category', label: 'Category', lookup: '/medicines/categories/' },
+      { key: 'manufacturer', label: 'Manufacturer', lookup: '/medicines/manufacturers/' },
+      {
+        key: 'is_active',
+        label: 'Status',
+        choices: [
+          { value: 'true', label: 'Active' },
+          { value: 'false', label: 'Inactive' },
+        ],
+      },
+    ],
     fields: [
       { key: 'generic_name', label: 'Generic name', required: true },
       { key: 'brand_name', label: 'Brand name' },
@@ -54,25 +76,12 @@ const modules: ModuleRoute[] = [
     columns: [
       { key: 'generic_name', label: 'Generic name' },
       { key: 'brand_name', label: 'Brand name' },
+      { key: 'manufacturer_name', label: 'Manufacturer' },
       { key: 'strength', label: 'Strength' },
-      { key: 'category', label: 'Category' },
-      { key: 'dosage_form', label: 'Dosage form' },
+      { key: 'category_name', label: 'Category' },
+      { key: 'dosage_form_name', label: 'Dosage form' },
       { key: 'reorder_level', label: 'Low-stock threshold' },
       { key: 'is_active', label: 'Active' },
-    ],
-  },
-  {
-    path: paths.inventory,
-    title: 'Inventory',
-    apiPath: '/medicines/batches/',
-    columns: [
-      { key: 'batch_number', label: 'Batch' },
-      { key: 'medicine', label: 'Medicine ID' },
-      { key: 'branch', label: 'Branch ID' },
-      { key: 'warehouse', label: 'Warehouse ID' },
-      { key: 'quantity', label: 'Quantity' },
-      { key: 'expiry_date', label: 'Expiry date' },
-      { key: 'status', label: 'Status' },
     ],
   },
   { path: paths.purchasing, title: 'Purchasing' },
@@ -177,6 +186,8 @@ const router = createBrowserRouter([
     element: <AppShell />,
     children: [
       { path: paths.dashboard, element: <DashboardPage /> },
+      { path: paths.inventory, element: <InventoryPage /> },
+      { path: paths.medicineDetail, element: <MedicineDetailPage /> },
       ...modules.map((module) => ({
         path: module.path,
         element: (
@@ -187,6 +198,8 @@ const router = createBrowserRouter([
               columns={module.columns}
               fields={module.fields}
               canWriteRoles={module.canWriteRoles}
+              filters={module.filters}
+              rowDetailPath={module.rowDetailPath}
             />
           ) : (
             <ModulePage

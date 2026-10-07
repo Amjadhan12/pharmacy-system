@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import EmptyState from '@/components/ui/EmptyState'
 import Spinner from '@/components/ui/Spinner'
 import { useAuth } from '@/features/auth/AuthContext'
 import { api, ApiRequestError } from '@/services/api'
 import type { ApiEnvelope, Paginated } from '@/types/api'
+import { normalizeDigits } from '@/utils/normalizeDigits'
 
 type Row = Record<string, unknown>
 type FieldType = 'text' | 'email' | 'number' | 'textarea' | 'checkbox' | 'select'
@@ -18,12 +20,21 @@ export interface DataModuleField {
   lookup?: string
 }
 
+export interface DataModuleFilter {
+  key: string
+  label: string
+  choices?: { value: string; label: string }[]
+  lookup?: string
+}
+
 interface DataModulePageProps {
   title: string
   apiPath: string
   columns: { key: string; label: string }[]
   fields: DataModuleField[]
   canWriteRoles?: string[]
+  filters?: DataModuleFilter[]
+  rowDetailPath?: string
 }
 
 function getRows(data: Paginated<Row> | undefined): Row[] {
@@ -43,10 +54,13 @@ export default function DataModulePage({
   columns,
   fields,
   canWriteRoles = [],
+  filters = [],
+  rowDetailPath,
 }: DataModulePageProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const [filterValues, setFilterValues] = useState<Record<string, string>>({})
   const [page, setPage] = useState(1)
   const [editing, setEditing] = useState<Row | null>(null)
   const [creating, setCreating] = useState(false)
@@ -57,18 +71,27 @@ export default function DataModulePage({
       user?.role?.code === 'super_admin')
 
   const listQuery = useQuery({
-    queryKey: ['module-records', apiPath, search, page],
+    queryKey: ['module-records', apiPath, search, filterValues, page],
     queryFn: async () => {
       const response = await api.get<ApiEnvelope<Paginated<Row>>>(apiPath, {
-        params: { search: search || undefined, page },
+        params: {
+          search: search || undefined,
+          ...Object.fromEntries(
+            Object.entries(filterValues).filter(([, value]) => value !== ''),
+          ),
+          page,
+        },
       })
       return response.data.data
     },
   })
 
   const lookupPaths = useMemo(
-    () => [...new Set(fields.flatMap((field) => field.lookup ? [field.lookup] : []))],
-    [fields],
+    () => [...new Set([
+      ...fields.flatMap((field) => field.lookup ? [field.lookup] : []),
+      ...filters.flatMap((filter) => filter.lookup ? [filter.lookup] : []),
+    ])],
+    [fields, filters],
   )
   const lookups = useQuery({
     queryKey: ['module-lookups', lookupPaths],
@@ -136,13 +159,28 @@ export default function DataModulePage({
         values[field.key] = form.get(field.key) === 'on'
       } else if (field.type === 'number') {
         const value = form.get(field.key)
-        if (value !== null && value !== '') values[field.key] = Number(value)
+        if (value !== null && value !== '') {
+          const normalized = normalizeDigits(String(value))
+          const parsed = Number(normalized)
+          if (!Number.isFinite(parsed)) {
+            setFormError(`${field.label} must be a valid number.`)
+            return
+          }
+          values[field.key] = parsed
+        }
       } else if (field.type === 'select') {
         const value = form.get(field.key)
         if (value) {
           values[field.key] = field.lookup ? Number(value) : String(value)
         } else if (field.lookup && !field.required) {
           values[field.key] = null
+        }
+        if (title === 'Medicines' && user?.pharmacies.length === 1) {
+          values.pharmacy = user.pharmacies[0].id
+        }
+        if (title === 'Medicines' && user?.pharmacies.length && user.pharmacies.length > 1) {
+          const selectedPharmacy = form.get('pharmacy')
+          if (selectedPharmacy) values.pharmacy = Number(selectedPharmacy)
         }
       } else {
         const value = form.get(field.key)
@@ -179,6 +217,38 @@ export default function DataModulePage({
               setPage(1)
             }}
           />
+          {filters.map((filter) => {
+            const options = filter.lookup
+              ? lookups.data?.[filter.lookup] ?? []
+              : []
+            return (
+              <select
+                key={filter.key}
+                aria-label={filter.label}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                value={filterValues[filter.key] ?? ''}
+                onChange={(event) => {
+                  setFilterValues((current) => ({
+                    ...current,
+                    [filter.key]: event.target.value,
+                  }))
+                  setPage(1)
+                }}
+              >
+                <option value="">All {filter.label.toLowerCase()}</option>
+                {filter.choices?.map((choice) => (
+                  <option key={choice.value} value={choice.value}>
+                    {choice.label}
+                  </option>
+                ))}
+                {options.map((option) => (
+                  <option key={String(option.id)} value={String(option.id)}>
+                    {String(option.name ?? option.code ?? option.id)}
+                  </option>
+                ))}
+              </select>
+            )
+          })}
           {canWrite && (
             <button
               type="button"
@@ -199,6 +269,23 @@ export default function DataModulePage({
           <h2 className="text-base font-semibold sm:col-span-2">
             {editing ? `Edit ${title.replace(/s$/, '')}` : `Add ${title.replace(/s$/, '')}`}
           </h2>
+          {title === 'Medicines' && (user?.pharmacies.length ?? 0) > 1 && (
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Pharmacy</span>
+              <select
+                name="pharmacy"
+                required
+                defaultValue={String(editing?.pharmacy ?? user?.pharmacies[0]?.id ?? '')}
+                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+              >
+                {user?.pharmacies.map((pharmacy) => (
+                  <option key={pharmacy.id} value={pharmacy.id}>
+                    {pharmacy.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {fields.filter((field) => field.key !== 'pharmacy').map((field) => {
             const initial = editing?.[field.key]
             const fieldType = field.type ?? 'text'
@@ -244,7 +331,11 @@ export default function DataModulePage({
                     ))}
                   </select>
                 ) : (
-                  <input {...common} type={fieldType} />
+                  <input
+                    {...common}
+                    type={fieldType === 'number' ? 'text' : fieldType}
+                    inputMode={fieldType === 'number' ? 'decimal' : undefined}
+                  />
                 )}
               </label>
             )
@@ -290,7 +381,7 @@ export default function DataModulePage({
             <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
               <tr>
                 {columns.map((column) => <th key={column.key} scope="col" className="px-4 py-3 font-medium">{column.label}</th>)}
-                {canWrite && <th className="px-4 py-3 font-medium">Actions</th>}
+                {(canWrite || rowDetailPath) && <th className="px-4 py-3 font-medium">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -309,8 +400,18 @@ export default function DataModulePage({
                       })()}
                     </td>
                   ))}
-                  {canWrite && (
+                  {(canWrite || rowDetailPath) && (
                     <td className="whitespace-nowrap px-4 py-3">
+                      {rowDetailPath && (
+                        <Link
+                          to={`${rowDetailPath}${row.id}`}
+                          className="mr-3 text-sky-700 hover:underline dark:text-sky-400"
+                        >
+                          View
+                        </Link>
+                      )}
+                      {canWrite && (
+                        <>
                       <button type="button" className="mr-3 text-emerald-700 hover:underline dark:text-emerald-400" onClick={() => startEdit(row)}>Edit</button>
                       <button
                         type="button"
@@ -324,6 +425,8 @@ export default function DataModulePage({
                       >
                         Deactivate
                       </button>
+                        </>
+                      )}
                     </td>
                   )}
                 </tr>

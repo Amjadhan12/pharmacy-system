@@ -40,14 +40,14 @@ class TenantApiTests(TestCase):
         cls.pharmacy = Pharmacy.objects.create(
             owner=other_owner, name="Assigned Pharmacy", country="AF"
         )
-        other_pharmacy = Pharmacy.objects.create(
+        cls.other_pharmacy = Pharmacy.objects.create(
             owner=other_owner, name="Unassigned Pharmacy", country="AF"
         )
         cls.branch = Branch.objects.create(
             pharmacy=cls.pharmacy, name="Assigned Branch", code="assigned"
         )
         other_branch = Branch.objects.create(
-            pharmacy=other_pharmacy, name="Unassigned Branch", code="unassigned"
+            pharmacy=cls.other_pharmacy, name="Unassigned Branch", code="unassigned"
         )
         UserBranch.objects.create(user=cls.user, branch=cls.branch, is_default=True)
         cls.warehouse = Warehouse.objects.create(
@@ -87,7 +87,7 @@ class TenantApiTests(TestCase):
         cls.supplier = Supplier.objects.create(
             pharmacy=cls.pharmacy, name="Assigned Supplier"
         )
-        Supplier.objects.create(pharmacy=other_pharmacy, name="Other Supplier")
+        Supplier.objects.create(pharmacy=cls.other_pharmacy, name="Other Supplier")
         cls.customer = Customer.objects.create(
             pharmacy=cls.pharmacy,
             first_name="Assigned",
@@ -95,7 +95,7 @@ class TenantApiTests(TestCase):
             email="assigned-customer@pharmafin.test",
         )
         Customer.objects.create(
-            pharmacy=other_pharmacy,
+            pharmacy=cls.other_pharmacy,
             first_name="Other",
             last_name="Customer",
             email="other-customer@pharmafin.test",
@@ -112,7 +112,7 @@ class TenantApiTests(TestCase):
             name="Other Cash",
             account_type="asset",
             currency="AFN",
-            pharmacy=other_pharmacy,
+            pharmacy=cls.other_pharmacy,
         )
 
     def setUp(self):
@@ -171,10 +171,14 @@ class TenantApiTests(TestCase):
         self.assertEqual(data["branches"], 1)
         self.assertEqual(data["medicines"], 1)
         self.assertEqual(data["active_medicines"], 1)
+        self.assertEqual(data["total_stock_units"], 12)
+        self.assertEqual(data["available_stock_units"], 12)
         self.assertEqual(data["low_stock_medicines"], 1)
+        self.assertEqual(data["out_of_stock_medicines"], 0)
         self.assertEqual(data["batches"], 1)
         self.assertEqual(data["stock_units"], 12)
         self.assertEqual(data["expiring_batches"], 1)
+        self.assertEqual(data["categories"], 1)
         self.assertEqual(data["suppliers"], 1)
         self.assertEqual(data["customers"], 1)
 
@@ -263,6 +267,67 @@ class TenantApiTests(TestCase):
         response = self.client.patch(
             f"/api/v1/customers/{self.customer.id}/",
             {"pharmacy": self.other_account.pharmacy_id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_medicine_catalog_is_scoped_by_pharmacy(self):
+        owned = Medicine.objects.create(
+            pharmacy=self.pharmacy,
+            generic_name="Tenant-owned medicine",
+            category=self.medicine.category,
+            dosage_form=self.medicine.dosage_form,
+            barcode="TENANT-OWNED-001",
+        )
+        foreign = Medicine.objects.create(
+            pharmacy=self.other_pharmacy,
+            generic_name="Foreign medicine",
+            category=self.medicine.category,
+            dosage_form=self.medicine.dosage_form,
+            barcode="FOREIGN-001",
+        )
+
+        results = self.get_results("/api/v1/medicines/medicines/")
+        self.assertIn(owned.pk, [row["id"] for row in results])
+        self.assertNotIn(foreign.pk, [row["id"] for row in results])
+        self.assertEqual(
+            self.client.get(
+                f"/api/v1/medicines/medicines/{foreign.pk}/"
+            ).status_code,
+            404,
+        )
+
+    def test_medicine_create_cannot_select_another_pharmacy(self):
+        response = self.client.post(
+            "/api/v1/medicines/medicines/",
+            {
+                "pharmacy": self.other_pharmacy.pk,
+                "generic_name": "Blocked cross-tenant medicine",
+                "category": self.medicine.category_id,
+                "dosage_form": self.medicine.dosage_form_id,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+
+    def test_catalog_mutations_require_a_staff_role(self):
+        customer_role = Role.objects.create(name="Catalog Test Customer", code="catalog-customer")
+        customer = User.objects.create_user(
+            username="catalog-customer",
+            email="catalog-customer@pharmafin.test",
+            password="catalog-test-password",
+            role=customer_role,
+        )
+        client = APIClient()
+        client.force_authenticate(user=customer)
+
+        response = client.post(
+            "/api/v1/medicines/medicines/",
+            {
+                "generic_name": "Unauthorized medicine",
+                "category": self.medicine.category_id,
+                "dosage_form": self.medicine.dosage_form_id,
+            },
             format="json",
         )
         self.assertEqual(response.status_code, 403)

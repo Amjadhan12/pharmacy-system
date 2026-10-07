@@ -1,11 +1,29 @@
-from decimal import Decimal
 from datetime import date
+from decimal import Decimal
 
-from django.db import transaction
 from django.core.exceptions import ValidationError
+from django.db import transaction
 
 from apps.medicines.models import MedicineBatch
 from .models import InventoryTransaction
+
+_MOVEMENT_DIRECTIONS = {
+    "purchase": "in",
+    "receipt": "in",
+    "sale_return": "in",
+    "return": "in",
+    "adjustment_in": "in",
+    "transfer_in": "in",
+    "sale": "out",
+    "dispatch": "out",
+    "purchase_return": "out",
+    "adjustment_out": "out",
+    "transfer_out": "out",
+    "damage": "out",
+    "expired": "out",
+}
+_MOVEMENT_DIRECTIONS["adjustment"] = None
+_MOVEMENT_DIRECTIONS["transfer"] = None
 
 
 def record_stock_movement(
@@ -18,49 +36,49 @@ def record_stock_movement(
     reference: str = "",
     created_by=None,
     direction: str | None = None,
+    notes: str = "",
 ):
-    """Append a stock movement and update its batch under a row lock.
-
-    Raises ``ValidationError`` when a dispatch would drive the batch quantity
-    negative (negative-stock protection).
-    """
+    """Atomically update one batch and append its stock-ledger movement."""
     qty = int(quantity)
     if qty <= 0:
         raise ValidationError("Quantity must be a positive integer.")
-    if transaction_type not in {"receipt", "dispatch", "adjustment", "return"}:
+    if transaction_type not in _MOVEMENT_DIRECTIONS:
         raise ValidationError(f"Unsupported stock movement: {transaction_type}.")
-    movement_direction = direction or (
-        "out" if transaction_type == "dispatch" else "in"
-    )
+    movement_direction = _MOVEMENT_DIRECTIONS[transaction_type] or direction
     if movement_direction not in {"in", "out"}:
         raise ValidationError("Direction must be 'in' or 'out'.")
-    if transaction_type == "dispatch":
-        movement_direction = "out"
-    if transaction_type == "receipt" or transaction_type == "return":
-        movement_direction = "in"
 
     with transaction.atomic():
-        locked_batch = MedicineBatch.objects.select_for_update().select_related(
-            "medicine"
-        ).get(pk=batch.pk)
+        locked_batch = (
+            MedicineBatch.objects.select_for_update()
+            .select_related("medicine")
+            .get(pk=batch.pk)
+        )
         if locked_batch.branch_id != branch.pk:
             raise ValidationError("Batch does not belong to the selected branch.")
         if warehouse and warehouse.branch_id != branch.pk:
             raise ValidationError("Warehouse does not belong to the selected branch.")
+        if locked_batch.medicine.pharmacy_id not in (None, branch.pharmacy_id):
+            raise ValidationError("Medicine does not belong to the selected pharmacy.")
         if movement_direction == "out":
-            if (
-                transaction_type == "dispatch"
-                and (
-                    locked_batch.status != "available"
-                    or locked_batch.expiry_date < date.today()
-                )
+            if transaction_type in {"sale", "dispatch"} and (
+                locked_batch.status != "available"
+                or locked_batch.expiry_date < date.today()
             ):
-                raise ValidationError("Expired or unavailable batches cannot be dispatched.")
-            available = locked_batch.quantity
-            if qty > available:
+                raise ValidationError(
+                    "Expired or unavailable batches cannot be dispatched."
+                )
+            if (
+                transaction_type == "expired"
+                and locked_batch.expiry_date >= date.today()
+            ):
+                raise ValidationError(
+                    "Only expired batches can be recorded as expired stock."
+                )
+            if qty > locked_batch.quantity:
                 raise ValidationError(
                     f"Insufficient stock for batch {locked_batch.batch_number}: "
-                    f"available {available}, requested {qty}."
+                    f"available {locked_batch.quantity}, requested {qty}."
                 )
             locked_batch.quantity -= qty
         else:
@@ -72,7 +90,7 @@ def record_stock_movement(
             locked_batch.status = "expired"
         elif locked_batch.status in {"out_of_stock", "expired"}:
             locked_batch.status = "available"
-        locked_batch.save(update_fields=["quantity", "status"])
+        locked_batch.save(update_fields=["quantity", "status", "updated_at"])
 
         movement = InventoryTransaction.objects.create(
             transaction_type=transaction_type,
@@ -84,18 +102,19 @@ def record_stock_movement(
             quantity=qty,
             unit_price=unit_price,
             reference=reference,
+            notes=notes,
             created_by=created_by,
         )
-
     return movement
 
 
-def fifo_batches(medicine, branch, qty, status="available"):
-    """Return (allocation list, remaining) ordered by earliest expiry (FEFO)."""
-    if int(qty) <= 0:
+def fefo_batches(medicine, branch, quantity: int, status="available"):
+    """Return exact stock allocations in earliest-expiry-first order."""
+    requested = int(quantity)
+    if requested <= 0:
         raise ValidationError("Quantity must be a positive integer.")
-    allocation = []
-    remaining = int(qty)
+    if medicine.pharmacy_id not in (None, branch.pharmacy_id):
+        raise ValidationError("Medicine does not belong to the selected pharmacy.")
     batches = (
         MedicineBatch.objects.filter(
             medicine=medicine,
@@ -105,19 +124,105 @@ def fifo_batches(medicine, branch, qty, status="available"):
             quantity__gt=0,
         )
         .order_by("expiry_date", "id")
-        .select_related("branch", "warehouse")
+        .select_related("branch", "warehouse", "medicine")
     )
-    for b in batches:
-        if remaining <= 0:
-            break
-        take = min(b.quantity, remaining)
-        allocation.append({"batch": b, "quantity": take})
-        remaining -= take
-
-    if remaining > 0:
+    allocations = []
+    remaining = requested
+    total_available = 0
+    for batch in batches:
+        total_available += batch.quantity
+        if remaining == 0:
+            continue
+        allocated = min(batch.quantity, remaining)
+        allocations.append({"batch": batch, "quantity": allocated})
+        remaining -= allocated
+    if remaining:
         raise ValidationError(
             f"Not enough available stock for {medicine} at {branch}: "
-            f"available {sum(b['batch'].quantity for b in allocation)}, "
-            f"requested {qty}."
+            f"available {total_available}, requested {requested}."
         )
-    return allocation, remaining
+    return allocations, remaining
+
+
+class FEFOAllocationService:
+    """Small injectable facade for FEFO stock planning."""
+
+    @staticmethod
+    def allocate(medicine, branch, quantity: int):
+        return fefo_batches(medicine, branch, quantity)
+
+
+@transaction.atomic
+def transfer_stock(
+    source: MedicineBatch,
+    destination: MedicineBatch,
+    quantity: int,
+    created_by=None,
+    reference: str = "",
+    notes: str = "",
+):
+    """Move stock between existing batches with paired ledger entries."""
+    if source.pk == destination.pk:
+        raise ValidationError("Source and destination batches must be different.")
+    locks = list(
+        MedicineBatch.objects.select_for_update()
+        .filter(pk__in=sorted((source.pk, destination.pk)))
+        .order_by("pk")
+    )
+    if len(locks) != 2:
+        raise ValidationError("Source or destination batch no longer exists.")
+    source_locked, destination_locked = (
+        (locks[0], locks[1])
+        if locks[0].pk == source.pk
+        else (locks[1], locks[0])
+    )
+    if source_locked.medicine_id != destination_locked.medicine_id:
+        raise ValidationError(
+            "Stock can only transfer between batches of one medicine."
+        )
+    if (
+        source_locked.branch.pharmacy_id != destination_locked.branch.pharmacy_id
+        or source_locked.medicine.pharmacy_id
+        not in (None, source_locked.branch.pharmacy_id)
+    ):
+        raise ValidationError("Transfers cannot cross pharmacy tenants.")
+    if (
+        source_locked.expiry_date < date.today()
+        or source_locked.status != "available"
+    ):
+        raise ValidationError("Unavailable batches cannot be transferred from.")
+    if (
+        destination_locked.expiry_date < date.today()
+        or destination_locked.status in {"recalled", "damaged"}
+    ):
+        raise ValidationError(
+            "Stock cannot be transferred into an unavailable batch."
+        )
+    transfer_reference = reference or f"TRANSFER-{source.pk}-{destination.pk}"
+    outbound = record_stock_movement(
+        "transfer_out",
+        source_locked,
+        source_locked.branch,
+        source_locked.warehouse,
+        quantity,
+        source_locked.purchase_price,
+        f"{transfer_reference}-OUT",
+        created_by,
+        notes=notes,
+    )
+    inbound = record_stock_movement(
+        "transfer_in",
+        destination_locked,
+        destination_locked.branch,
+        destination_locked.warehouse,
+        quantity,
+        destination_locked.purchase_price,
+        f"{transfer_reference}-IN",
+        created_by,
+        notes=notes,
+    )
+    return outbound, inbound
+
+
+# Compatibility for existing callers; the implementation is FEFO ordered.
+fifo_batches = fefo_batches

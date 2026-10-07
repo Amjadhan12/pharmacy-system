@@ -39,6 +39,7 @@ class DosageForm(TimeStampedModel):
     name = models.CharField(max_length=100, unique=True)
     code = models.SlugField(max_length=50, unique=True)
     description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
         ordering = ["name"]
@@ -54,6 +55,7 @@ class Manufacturer(TimeStampedModel):
     country = models.CharField(max_length=2, blank=True)
     website = models.URLField(blank=True)
     description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
         ordering = ["name"]
@@ -63,8 +65,19 @@ class Manufacturer(TimeStampedModel):
 
 
 class Medicine(TimeStampedModel):
-    """A medicine product (generic/brand level, not per-batch)."""
+    """A tenant-owned medicine product (generic/brand level, not per-batch).
 
+    A null pharmacy is reserved for shared legacy/formulary entries.
+    """
+
+    pharmacy = models.ForeignKey(
+        "pharmacies.Pharmacy",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="medicines",
+        help_text="Null only for a shared formulary entry.",
+    )
     generic_name = models.CharField(max_length=200, db_index=True)
     brand_name = models.CharField(max_length=200, blank=True, db_index=True)
     manufacturer = models.ForeignKey(
@@ -92,9 +105,9 @@ class Medicine(TimeStampedModel):
         choices=MedicineRoute.choices,
         default=MedicineRoute.ORAL,
     )
-    barcode = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    barcode = models.CharField(max_length=64, null=True, blank=True)
     gtin = models.CharField(
-        max_length=20, unique=True, null=True, blank=True, verbose_name="GTIN"
+        max_length=20, null=True, blank=True, verbose_name="GTIN"
     )
     description = models.TextField(blank=True)
     prescription_required = models.BooleanField(default=False)
@@ -113,6 +126,16 @@ class Medicine(TimeStampedModel):
                 fields=["generic_name", "brand_name"], name="medicine_name_idx"
             ),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["pharmacy", "barcode"],
+                name="uniq_medicine_pharmacy_barcode",
+            ),
+            models.UniqueConstraint(
+                fields=["pharmacy", "gtin"],
+                name="uniq_medicine_pharmacy_gtin",
+            ),
+        ]
 
     def __str__(self) -> str:
         base = self.brand_name or self.generic_name
@@ -126,7 +149,7 @@ class MedicineBatch(TimeStampedModel):
     """
 
     medicine = models.ForeignKey(
-        Medicine, on_delete=models.CASCADE, related_name="batches"
+        Medicine, on_delete=models.PROTECT, related_name="batches"
     )
     branch = models.ForeignKey(
         "branches.Branch", on_delete=models.CASCADE, related_name="medicine_batches"

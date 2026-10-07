@@ -15,7 +15,10 @@ from apps.medicines.models import (
 )
 from apps.pharmacies.models import Pharmacy
 from apps.transactions.models import InventoryTransaction
-from apps.transactions.services import fifo_batches, record_stock_movement
+from apps.transactions.services import (
+    fifo_batches,
+    record_stock_movement,
+)
 
 
 class InventoryMovementTests(TestCase):
@@ -149,3 +152,97 @@ class InventoryMovementTests(TestCase):
         self.assertEqual(response.status_code, 400)
         batch.refresh_from_db()
         self.assertEqual(batch.quantity, 7)
+
+    def test_batch_create_records_opening_stock_in_ledger(self):
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+
+        response = client.post(
+            "/api/v1/medicines/batches/",
+            {
+                "medicine": self.medicine.pk,
+                "branch": self.branch.pk,
+                "warehouse": self.warehouse.pk,
+                "batch_number": "API-CREATE",
+                "purchase_price": "12.75",
+                "selling_price": "18.50",
+                "quantity": 9,
+                "expiry_date": (date.today() + timedelta(days=180)).isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        batch = MedicineBatch.objects.get(batch_number="API-CREATE")
+        movement = InventoryTransaction.objects.get(batch=batch)
+        self.assertEqual(batch.quantity, 9)
+        self.assertEqual(movement.transaction_type, "receipt")
+        self.assertEqual(movement.direction, "in")
+        self.assertEqual(movement.quantity, 9)
+        self.assertEqual(str(batch.purchase_price), "12.75")
+
+    def test_inventory_expiry_low_stock_and_fefo_endpoints(self):
+        expired = self.make_batch("API-EXPIRED", -1, 3)
+        soon = self.make_batch("API-SOON", 10, 4)
+        later = self.make_batch("API-LATER", 80, 6)
+        self.medicine.reorder_level = 11
+        self.medicine.save(update_fields=["reorder_level"])
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+
+        expired_response = client.get("/api/v1/inventory/expired/")
+        expiring_response = client.get(
+            "/api/v1/inventory/expiring/?days=30"
+        )
+        low_stock_response = client.get("/api/v1/inventory/low-stock/")
+        fefo_response = client.get(
+            f"/api/v1/inventory/fefo/{self.medicine.pk}/"
+            f"?branch={self.branch.pk}&quantity=5"
+        )
+
+        self.assertEqual(expired_response.status_code, 200)
+        self.assertEqual(
+            [row["id"] for row in expired_response.json()["data"]["results"]],
+            [expired.pk],
+        )
+        self.assertEqual(expiring_response.status_code, 200)
+        self.assertEqual(
+            [row["id"] for row in expiring_response.json()["data"]["results"]],
+            [soon.pk],
+        )
+        self.assertEqual(low_stock_response.status_code, 200)
+        self.assertEqual(
+            [row["id"] for row in low_stock_response.json()["data"]["results"]],
+            [self.medicine.pk],
+        )
+        self.assertEqual(fefo_response.status_code, 200, fefo_response.content)
+        allocations = fefo_response.json()["data"]["allocations"]
+        self.assertEqual(
+            [(row["batch"]["id"], row["quantity"]) for row in allocations],
+            [(soon.pk, 4), (later.pk, 1)],
+        )
+
+    def test_transfer_creates_paired_ledger_rows_and_moves_stock(self):
+        source = self.make_batch("TRANSFER-SOURCE", 60, 10)
+        destination = self.make_batch("TRANSFER-DESTINATION", 120, 2)
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+
+        response = client.post(
+            "/api/v1/inventory/transfers/",
+            {
+                "source_batch": source.pk,
+                "destination_batch": destination.pk,
+                "quantity": 4,
+                "reference": "MOVE-001",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        source.refresh_from_db()
+        destination.refresh_from_db()
+        self.assertEqual((source.quantity, destination.quantity), (6, 6))
+        rows = InventoryTransaction.objects.filter(reference__startswith="MOVE-001")
+        self.assertEqual(rows.count(), 2)
+        self.assertEqual(set(rows.values_list("direction", flat=True)), {"in", "out"})

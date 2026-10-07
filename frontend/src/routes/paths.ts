@@ -4,6 +4,7 @@ export const paths = {
   login: '/login',
   pos: '/pos',
   medicines: '/medicines',
+  medicineDetail: '/medicines/:medicineId',
   inventory: '/inventory',
   purchasing: '/purchasing',
   suppliers: '/suppliers',

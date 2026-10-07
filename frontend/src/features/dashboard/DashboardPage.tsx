@@ -1,12 +1,9 @@
 import {
   Boxes,
-  Building2,
   CircleAlert,
   CircleGauge,
   Pill,
   Timer,
-  Truck,
-  Users,
 } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Card, { CardHeader } from '@/components/ui/Card'
@@ -79,14 +76,13 @@ export default function DashboardPage() {
       {summary && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: 'Medicines', value: summary.medicines, icon: Pill },
+            { label: 'Total medicines', value: summary.medicines, icon: Pill },
+            { label: 'Total stock', value: summary.total_stock_units, icon: Boxes },
             { label: 'Low stock', value: summary.low_stock_medicines, icon: CircleGauge, tone: 'warning' as const },
-            { label: 'Stock units', value: summary.stock_units, icon: Boxes },
-            { label: 'Branches', value: summary.branches, icon: Building2 },
-            { label: 'Suppliers', value: summary.suppliers, icon: Truck },
-            { label: 'Customers', value: summary.customers, icon: Users },
+            { label: 'Out of stock', value: summary.out_of_stock_medicines, icon: CircleAlert, tone: 'warning' as const },
+            { label: 'Categories', value: summary.categories, icon: Pill },
             {
-              label: 'Expiring batches',
+              label: 'Expiring soon',
               value: summary.expiring_batches,
               icon: Timer,
               tone: 'warning' as const,
@@ -97,7 +93,6 @@ export default function DashboardPage() {
               icon: CircleAlert,
               tone: 'warning' as const,
             },
-            { label: 'All batches', value: summary.batches, icon: Boxes },
           ].map((metric) => (
             <StatCard
               key={metric.label}

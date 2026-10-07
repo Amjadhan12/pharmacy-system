@@ -172,6 +172,25 @@ class Command(BaseCommand):
                 user.save(update_fields=["password"])
                 created_users[email] = user
 
+            test_email = "testlogin@pharmafin.local"
+            test_user = User.objects.filter(email=test_email).first()
+            if test_user is None:
+                test_user = User.objects.create_user(
+                    username=self._unique_username(User, "testlogin", test_email),
+                    email=test_email,
+                    first_name="Test",
+                    last_name="Pharmacist",
+                    role=roles_by_code["pharmacist"],
+                    password="TestLogin@123",
+                    is_active=True,
+                )
+            else:
+                test_user.role = roles_by_code["pharmacist"]
+                test_user.is_active = True
+                test_user.set_password("TestLogin@123")
+                test_user.save(update_fields=["role", "is_active", "password"])
+            created_users[test_email] = test_user
+
             pharmacy, _ = Pharmacy.objects.get_or_create(
                 name="PharmaFin Central Pharmacy",
                 defaults={
@@ -193,7 +212,13 @@ class Command(BaseCommand):
             )
             if pharmacy.owner_id != created_users["owner@pharmafin.local"].pk:
                 pharmacy.owner = created_users["owner@pharmafin.local"]
-                pharmacy.save(update_fields=["owner"])
+            pharmacy.city = "Jalalabad"
+            pharmacy.country = "AF"
+            pharmacy.currency = "AFN"
+            pharmacy.timezone = "Asia/Kabul"
+            pharmacy.save(
+                update_fields=["owner", "city", "country", "currency", "timezone"]
+            )
 
             main_branch, _ = Branch.objects.get_or_create(
                 pharmacy=pharmacy,
@@ -213,7 +238,7 @@ class Command(BaseCommand):
                 pharmacy=pharmacy,
                 code="jalalabad",
                 defaults={
-                    "name": "Jalalabad Branch",
+                    "name": "Second Branch",
                     "address": "Old City Road, Jalalabad",
                     "city": "Jalalabad",
                     "phone": "+93 700 100 002",
@@ -223,6 +248,9 @@ class Command(BaseCommand):
                     "status": "active",
                 },
             )
+            if jalalabad_branch.name != "Second Branch":
+                jalalabad_branch.name = "Second Branch"
+                jalalabad_branch.save(update_fields=["name", "updated_at"])
 
             for branch in [main_branch, jalalabad_branch]:
                 if branch.manager_id != created_users["manager@pharmafin.local"].pk:
@@ -245,17 +273,11 @@ class Command(BaseCommand):
                         defaults={"is_default": False},
                     )
 
-            test_user = User.objects.filter(
-                email="testlogin@pharmafin.local",
-                role__code="pharmacist",
-                is_active=True,
-            ).first()
-            if test_user:
-                UserBranch.objects.get_or_create(
-                    user=test_user,
-                    branch=main_branch,
-                    defaults={"is_default": True},
-                )
+            UserBranch.objects.get_or_create(
+                user=test_user,
+                branch=main_branch,
+                defaults={"is_default": True},
+            )
 
             main_warehouse, _ = Warehouse.objects.get_or_create(
                 branch=main_branch,
@@ -270,16 +292,23 @@ class Command(BaseCommand):
             jalalabad_warehouse, _ = Warehouse.objects.get_or_create(
                 branch=jalalabad_branch,
                 code="jalalabad-warehouse",
-                defaults={"name": "Jalalabad Warehouse", "address": "New Market, Jalalabad", "is_default": True, "is_active": True},
+                defaults={"name": "Secondary Warehouse", "address": "New Market, Jalalabad", "is_default": True, "is_active": True},
             )
+            if jalalabad_warehouse.name != "Secondary Warehouse":
+                jalalabad_warehouse.name = "Secondary Warehouse"
+                jalalabad_warehouse.save(update_fields=["name", "updated_at"])
 
             category_specs = [
-                ("pain-relief", "Pain Relief", "Common analgesics and pain management medicines."),
+                ("analgesics", "Analgesics", "Pain and fever medicines."),
+                ("antihistamines", "Antihistamines", "Allergy and antihistamine medicines."),
+                ("ors-electrolytes", "ORS / Electrolytes", "Oral rehydration and electrolyte products."),
+                ("respiratory", "Respiratory", "Respiratory and cough medicines."),
                 ("antibiotics", "Antibiotics", "Bacterial infection treatments."),
-                ("antiallergics", "Antiallergics", "Allergy and antihistamine products."),
                 ("gastrointestinal", "Gastrointestinal", "Digestive and GI care medicines."),
                 ("diabetes", "Diabetes", "Anti-diabetic medications."),
                 ("vitamins", "Vitamins", "Vitamin and mineral supplements."),
+                ("pain-relief", "Pain Relief", "Common analgesics and pain management medicines."),
+                ("antiallergics", "Antiallergics", "Allergy and antihistamine products."),
                 ("cold-flu", "Cold & Flu", "Symptomatic cold and flu care."),
                 ("cardiovascular", "Cardiovascular", "Heart and blood pressure medicines."),
                 ("dermatology", "Dermatology", "Skin condition treatments."),
@@ -310,6 +339,7 @@ class Command(BaseCommand):
                 ("drops", "Drops", "Ophthalmic or ear drops."),
                 ("spray", "Spray", "Nasal or oral spray."),
                 ("powder", "Powder", "Oral or topical powder."),
+                ("sachet", "Sachet", "Single-dose powder sachet."),
                 ("solution", "Solution", "Liquid oral or topical solution."),
                 ("suppository", "Suppository", "Rectal or vaginal suppository."),
             ]
@@ -340,30 +370,35 @@ class Command(BaseCommand):
                 manufacturers[name] = manufacturer
 
             medicine_specs = [
-                ("Paracetamol", "Panadol", "Pain Relief", "Tablet", "500 mg", "oral", "MED-001", "1234567890123", "General pain relief medicine.", False, "room_temperature"),
-                ("Ibuprofen", "Brufen", "Pain Relief", "Capsule", "400 mg", "oral", "MED-002", "2345678901234", "Anti-inflammatory medicine.", False, "room_temperature"),
+                ("Paracetamol", "Panadol", "Analgesics", "Tablet", "500 mg", "oral", "MED-001", "1234567890123", "General pain relief medicine.", False, "room_temperature"),
+                ("Ibuprofen", "Brufen", "Analgesics", "Capsule", "400 mg", "oral", "MED-002", "2345678901234", "Anti-inflammatory medicine.", False, "room_temperature"),
                 ("Amoxicillin", "Amoxil", "Antibiotics", "Capsule", "500 mg", "oral", "MED-003", "3456789012345", "Broad-spectrum antibiotic.", True, "room_temperature"),
                 ("Azithromycin", "Zithromax", "Antibiotics", "Tablet", "500 mg", "oral", "MED-004", "4567890123456", "Macrolide antibiotic.", True, "room_temperature"),
                 ("Omeprazole", "Losec", "Gastrointestinal", "Capsule", "20 mg", "oral", "MED-005", "5678901234567", "Acid suppression medication.", False, "room_temperature"),
-                ("Cetirizine", "Zyrtec", "Antiallergics", "Tablet", "10 mg", "oral", "MED-006", "6789012345678", "Antihistamine for allergy relief.", False, "room_temperature"),
+                ("Cetirizine", "Zyrtec", "Antihistamines", "Tablet", "10 mg", "oral", "MED-006", "6789012345678", "Antihistamine for allergy relief.", False, "room_temperature"),
                 ("Metformin", "Glucophage", "Diabetes", "Tablet", "500 mg", "oral", "MED-007", "7890123456789", "Blood sugar control medicine.", False, "room_temperature"),
-                ("ORS", "Oral Rehydration Salts", "Medical Supplies", "Powder", "20.5 g", "oral", "MED-008", "8901234567890", "Electrolyte replacement formula.", False, "dry"),
+                ("ORS", "Oral Rehydration Salts", "ORS / Electrolytes", "Sachet", "20.5 g", "oral", "MED-008", "8901234567890", "Electrolyte replacement formula.", False, "dry"),
                 ("Vitamin C", "C-Vitamin", "Vitamins", "Tablet", "500 mg", "oral", "MED-009", "9012345678901", "Vitamin supplement.", False, "room_temperature"),
-                ("Diclofenac", "Voltaren", "Pain Relief", "Tablet", "50 mg", "oral", "MED-010", "0123456789012", "Short-term pain and inflammation relief.", False, "room_temperature"),
+                ("Diclofenac", "Voltaren", "Analgesics", "Tablet", "50 mg", "oral", "MED-010", "0123456789012", "Short-term pain and inflammation relief.", False, "room_temperature"),
                 ("Amlodipine", "Norvasc", "Cardiovascular", "Tablet", "5 mg", "oral", "MED-011", "1023456789012", "Blood pressure management.", False, "room_temperature"),
                 ("Losartan", "Cozaar", "Cardiovascular", "Tablet", "50 mg", "oral", "MED-012", "2034567890123", "Blood pressure management.", False, "room_temperature"),
                 ("Pantoprazole", "Pantocid", "Gastrointestinal", "Tablet", "40 mg", "oral", "MED-013", "3045678901234", "Proton pump inhibitor.", False, "room_temperature"),
-                ("Loratadine", "Claritin", "Antiallergics", "Tablet", "10 mg", "oral", "MED-014", "4056789012345", "Daily allergy support medicine.", False, "room_temperature"),
-                ("Cough Syrup", "Relief Syrup", "Cold & Flu", "Syrup", "120 ml", "oral", "MED-015", "5067890123456", "Demonstration cough relief syrup.", False, "cool"),
+                ("Loratadine", "Claritin", "Antihistamines", "Tablet", "10 mg", "oral", "MED-014", "4056789012345", "Daily allergy support medicine.", False, "room_temperature"),
+                ("Cough Syrup", "Relief Syrup", "Respiratory", "Syrup", "120 ml", "oral", "MED-015", "5067890123456", "Demonstration cough relief syrup.", False, "cool"),
             ]
 
             medicines = {}
             for generic_name, brand_name, category_name, dosage_name, strength, route, barcode, gtin, description, prescription_required, storage_condition in medicine_specs:
                 medicine = Medicine.objects.filter(
-                    Q(barcode=barcode) | Q(gtin=gtin) | Q(generic_name=generic_name, brand_name=brand_name)
+                    pharmacy=pharmacy,
+                ).filter(
+                    Q(barcode=barcode)
+                    | Q(gtin=gtin)
+                    | Q(generic_name=generic_name, brand_name=brand_name)
                 ).first()
                 if medicine is None:
                     medicine = Medicine.objects.create(
+                        pharmacy=pharmacy,
                         generic_name=generic_name,
                         brand_name=brand_name,
                         manufacturer=manufacturers.get("Acme Pharmaceuticals"),
@@ -376,9 +411,11 @@ class Command(BaseCommand):
                         description=description,
                         prescription_required=prescription_required,
                         storage_condition=storage_condition,
+                        reorder_level=20 if generic_name == "Cetirizine" else 10,
                         is_active=True,
                     )
                 else:
+                    medicine.pharmacy = pharmacy
                     medicine.generic_name = generic_name
                     medicine.brand_name = brand_name
                     medicine.manufacturer = manufacturers.get("Acme Pharmaceuticals")
@@ -392,7 +429,9 @@ class Command(BaseCommand):
                     medicine.prescription_required = prescription_required
                     medicine.storage_condition = storage_condition
                     medicine.is_active = True
+                    medicine.reorder_level = 20 if generic_name == "Cetirizine" else 10
                     medicine.save(update_fields=[
+                        "pharmacy",
                         "generic_name",
                         "brand_name",
                         "manufacturer",
@@ -405,76 +444,82 @@ class Command(BaseCommand):
                         "description",
                         "prescription_required",
                         "storage_condition",
+                        "reorder_level",
                         "is_active",
                     ])
                 medicines[generic_name] = medicine
 
             inventory_transactions = 0
-            batch_order = [
-                ("Paracetamol", main_branch, main_warehouse, "PAR-001", 120, -30, 65, Decimal("10.00"), Decimal("18.00")),
-                ("Paracetamol", main_branch, cold_storage, "PAR-002", 250, 12, 60, Decimal("11.00"), Decimal("19.00")),
-                ("Ibuprofen", jalalabad_branch, jalalabad_warehouse, "IBU-001", 180, 45, 120, Decimal("12.00"), Decimal("22.00")),
-                ("Amoxicillin", main_branch, main_warehouse, "AMX-001", 90, 75, 210, Decimal("18.00"), Decimal("28.00")),
-                ("Azithromycin", main_branch, cold_storage, "AZI-001", 60, -20, 90, Decimal("21.00"), Decimal("33.00")),
-                ("Omeprazole", jalalabad_branch, jalalabad_warehouse, "OME-001", 140, 8, 100, Decimal("9.00"), Decimal("16.00")),
-                ("Cetirizine", main_branch, main_warehouse, "CET-001", 250, 20, 110, Decimal("7.00"), Decimal("12.50")),
-                ("Metformin", jalalabad_branch, jalalabad_warehouse, "MET-001", 200, 150, 300, Decimal("8.00"), Decimal("14.00")),
-                ("ORS", main_branch, main_warehouse, "ORS-001", 300, 30, 200, Decimal("3.50"), Decimal("6.00")),
-                ("Vitamin C", main_branch, cold_storage, "VIT-001", 180, 90, 230, Decimal("6.00"), Decimal("10.00")),
-                ("Diclofenac", jalalabad_branch, jalalabad_warehouse, "DIC-001", 120, -10, 45, Decimal("9.50"), Decimal("17.00")),
-                ("Amlodipine", main_branch, main_warehouse, "AML-001", 140, 45, 160, Decimal("11.00"), Decimal("20.00")),
-                ("Losartan", jalalabad_branch, jalalabad_warehouse, "LOS-001", 110, 75, 180, Decimal("10.50"), Decimal("19.50")),
-                ("Pantoprazole", main_branch, main_warehouse, "PAN-001", 170, 20, 135, Decimal("12.00"), Decimal("22.00")),
-                ("Loratadine", jalalabad_branch, jalalabad_warehouse, "LOR-001", 160, 180, 260, Decimal("7.20"), Decimal("13.50")),
-                ("Cough Syrup", main_branch, cold_storage, "COUGH-001", 90, 5, 80, Decimal("14.00"), Decimal("24.00")),
+            expiry_profiles = [
+                ("EXP", -7, 8, main_branch, main_warehouse),
+                ("D15", 15, 12, main_branch, cold_storage),
+                ("D45", 45, 16, jalalabad_branch, jalalabad_warehouse),
+                ("D75", 75, 24, main_branch, main_warehouse),
+                ("LONG", 180, 60, jalalabad_branch, jalalabad_warehouse),
             ]
-
             batch_count = 0
-            for medicine_name, branch, warehouse, batch_number, quantity, expiry_days_offset, manufacture_offset, purchase_price, selling_price in batch_order:
-                medicine = medicines[medicine_name]
-                expiry_date = today + timedelta(days=max(expiry_days_offset, 5))
-                if expiry_days_offset < 0:
-                    expiry_date = today - timedelta(days=abs(expiry_days_offset))
-                manufacture_date = today - timedelta(days=max(manufacture_offset, 30))
-                batch, created = MedicineBatch.objects.get_or_create(
-                    medicine=medicine,
-                    branch=branch,
-                    batch_number=batch_number,
-                    defaults={
-                        "warehouse": warehouse,
-                        "purchase_price": purchase_price,
-                        "selling_price": selling_price,
-                        "quantity": quantity,
-                        "manufacture_date": manufacture_date,
-                        "expiry_date": expiry_date,
-                        "barcode": f"BATCH-{medicine_name[:3].upper()}-{batch_number}",
-                        "status": "expired" if expiry_date < today else "available",
-                    },
-                )
-                if not created:
-                    batch.warehouse = warehouse
-                    batch.purchase_price = purchase_price
-                    batch.selling_price = selling_price
-                    batch.quantity = quantity
-                    batch.manufacture_date = manufacture_date
-                    batch.expiry_date = expiry_date
-                    batch.barcode = f"BATCH-{medicine_name[:3].upper()}-{batch_number}"
-                    batch.status = "expired" if expiry_date < today else "available"
-                    batch.save(update_fields=["warehouse", "purchase_price", "selling_price", "quantity", "manufacture_date", "expiry_date", "barcode", "status"])
-                batch_count += 1
-                if not InventoryTransaction.objects.filter(reference=f"INIT-{batch.batch_number}", batch=batch).exists():
-                    InventoryTransaction.objects.create(
-                        transaction_type="receipt",
-                        batch=batch,
+            for medicine_index, (medicine_name, medicine) in enumerate(medicines.items()):
+                for profile, expiry_offset, default_quantity, branch, warehouse in expiry_profiles:
+                    batch_number = f"{medicine_index + 1:02d}-{profile}"
+                    quantity = 1 if medicine_name == "Cetirizine" else default_quantity
+                    expiry_date = today + timedelta(days=expiry_offset)
+                    manufacture_date = today - timedelta(
+                        days=max(365, -expiry_offset + 30)
+                    )
+                    batch, _ = MedicineBatch.objects.get_or_create(
                         medicine=medicine,
                         branch=branch,
-                        warehouse=warehouse,
-                        quantity=batch.quantity,
-                        unit_price=batch.purchase_price,
-                        reference=f"INIT-{batch.batch_number}",
-                        created_by=created_users["inventory@pharmafin.local"],
+                        batch_number=batch_number,
+                        defaults={
+                            "warehouse": warehouse,
+                            "purchase_price": Decimal("8.00") + medicine_index,
+                            "selling_price": Decimal("12.00") + medicine_index,
+                            "quantity": quantity,
+                            "manufacture_date": manufacture_date,
+                            "expiry_date": expiry_date,
+                            "barcode": f"DEMO-{medicine_index + 1:02d}-{profile}",
+                            "status": "expired" if expiry_date < today else "available",
+                        },
                     )
-                    inventory_transactions += 1
+                    batch.warehouse = warehouse
+                    batch.purchase_price = Decimal("8.00") + medicine_index
+                    batch.selling_price = Decimal("12.00") + medicine_index
+                    batch.manufacture_date = manufacture_date
+                    batch.expiry_date = expiry_date
+                    batch.barcode = f"DEMO-{medicine_index + 1:02d}-{profile}"
+                    batch.status = (
+                        "expired"
+                        if expiry_date < today
+                        else "out_of_stock"
+                        if batch.quantity == 0
+                        else "available"
+                    )
+                    batch.save(
+                        update_fields=[
+                            "warehouse", "purchase_price", "selling_price",
+                            "manufacture_date", "expiry_date", "barcode",
+                            "status", "updated_at",
+                        ]
+                    )
+                    reference = f"SEED-{batch.batch_number}"
+                    if not InventoryTransaction.objects.filter(
+                        reference=reference, batch=batch
+                    ).exists():
+                        InventoryTransaction.objects.create(
+                            transaction_type="purchase",
+                            direction="in",
+                            batch=batch,
+                            medicine=medicine,
+                            branch=branch,
+                            warehouse=warehouse,
+                            quantity=batch.quantity,
+                            unit_price=batch.purchase_price,
+                            reference=reference,
+                            notes="Idempotent opening inventory seed.",
+                            created_by=created_users["inventory@pharmafin.local"],
+                        )
+                        inventory_transactions += 1
+                    batch_count += 1
 
             supplier_specs = [
                 ("Kabul Medical Supply", "info@kabulmedical.local", "+93 700 200 001", "Kabul main market", "Kabul", "AF", "Tax ID 101"),
