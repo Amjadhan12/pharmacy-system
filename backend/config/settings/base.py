@@ -40,6 +40,13 @@ INSTALLED_APPS = [
     "common",
     # PharmaFin apps
     "apps.accounts",
+    "apps.customers",
+    "apps.suppliers",
+    "apps.purchases",
+    "apps.sales",
+    "apps.expenses",
+    "apps.accounting",
+    "apps.transactions",
     "apps.pharmacies",
     "apps.branches",
     "apps.medicines",
