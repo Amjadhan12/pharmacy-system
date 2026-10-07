@@ -3,6 +3,7 @@
 from django.db.models import QuerySet
 from rest_framework import generics, permissions
 
+from apps.accounts.tenancy import accessible_branches, accessible_pharmacies
 from .models import Branch, Warehouse
 from .serializers import BranchSerializer, WarehouseSerializer
 
@@ -14,15 +15,28 @@ class BranchListView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self) -> QuerySet:
-        return Branch.objects.all().select_related("pharmacy", "manager")
+        return accessible_branches(self.request.user).select_related(
+            "pharmacy", "manager"
+        )
 
     def perform_create(self, serializer):
-        pharmacy_id = self.request.data.get("pharmacy")
-        # A staff member may only create branches inside their own pharmacies.
-        if not (self.request.user.is_superuser and pharmacy_id):
-            pharmacy_ids = self.request.user.pharmacies.values_list("pk", flat=True)
-            if pharmacy_id and pharmacy_id not in pharmacy_ids:
-                self.permission_denied(self.request)
+        pharmacy = serializer.validated_data["pharmacy"]
+        if not (
+            self.request.user.is_superuser
+            or pharmacy.owner_id == self.request.user.pk
+        ):
+            self.permission_denied(self.request)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        pharmacy = serializer.validated_data.get(
+            "pharmacy", serializer.instance.pharmacy
+        )
+        if not (
+            self.request.user.is_superuser
+            or pharmacy.owner_id == self.request.user.pk
+        ):
+            self.permission_denied(self.request)
         serializer.save()
 
 
@@ -33,7 +47,20 @@ class BranchRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self) -> QuerySet:
-        return Branch.objects.all().select_related("pharmacy", "manager")
+        return accessible_branches(self.request.user).select_related(
+            "pharmacy", "manager"
+        )
+
+    def perform_update(self, serializer):
+        pharmacy = serializer.validated_data.get(
+            "pharmacy", serializer.instance.pharmacy
+        )
+        if not (
+            self.request.user.is_superuser
+            or pharmacy.owner_id == self.request.user.pk
+        ):
+            self.permission_denied(self.request)
+        serializer.save()
 
     def perform_destroy(self, instance):
         # Keep branch records while still allowing hard delete by admin.
@@ -49,7 +76,9 @@ class WarehouseListView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self) -> QuerySet:
-        qs = Warehouse.objects.select_related("branch", "branch__pharmacy")
+        qs = Warehouse.objects.filter(
+            branch__in=accessible_branches(self.request.user)
+        ).select_related("branch", "branch__pharmacy")
         branch = self.request.query_params.get("branch")
         if branch:
             qs = qs.filter(branch_id=branch)
@@ -57,16 +86,12 @@ class WarehouseListView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         branch = serializer.validated_data.get("branch")
-        if branch and self.request.user.is_superuser:
-            serializer.save()
-            return
-        allowed_branch_ids = set(
-            self.request.user.pharmacies.values_list("branches__id", flat=True)
-        )
-        if branch and branch.id in allowed_branch_ids:
-            serializer.save()
-            return
-        self.permission_denied(self.request)
+        if branch is None or not (
+            self.request.user.is_superuser
+            or branch.pharmacy.owner_id == self.request.user.pk
+        ):
+            self.permission_denied(self.request)
+        serializer.save()
 
 
 class WarehouseRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
@@ -76,16 +101,15 @@ class WarehouseRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self) -> QuerySet:
-        return Warehouse.objects.select_related("branch", "branch__pharmacy")
+        return Warehouse.objects.filter(
+            branch__in=accessible_branches(self.request.user)
+        ).select_related("branch", "branch__pharmacy")
 
-    def get_object(self):
-        obj = super().get_object()
-        if self.request.user.is_superuser:
-            return obj
-        allowed_branch_ids = set(
-            self.request.user.pharmacies.values_list("branches__id", flat=True)
-        )
-        if obj.branch_id in allowed_branch_ids:
-            return obj
-        self.permission_denied(self.request)
-
+    def perform_update(self, serializer):
+        branch = serializer.validated_data.get("branch", serializer.instance.branch)
+        if not (
+            self.request.user.is_superuser
+            or branch.pharmacy.owner_id == self.request.user.pk
+        ):
+            self.permission_denied(self.request)
+        serializer.save()

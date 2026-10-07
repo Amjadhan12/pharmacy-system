@@ -245,6 +245,18 @@ class Command(BaseCommand):
                         defaults={"is_default": False},
                     )
 
+            test_user = User.objects.filter(
+                email="testlogin@pharmafin.local",
+                role__code="pharmacist",
+                is_active=True,
+            ).first()
+            if test_user:
+                UserBranch.objects.get_or_create(
+                    user=test_user,
+                    branch=main_branch,
+                    defaults={"is_default": True},
+                )
+
             main_warehouse, _ = Warehouse.objects.get_or_create(
                 branch=main_branch,
                 code="main-warehouse",

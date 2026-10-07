@@ -33,6 +33,22 @@ export interface Role {
   description: string
 }
 
+export interface PharmacyAccess {
+  id: number
+  name: string
+  city: string
+  country: string
+  currency: string
+}
+
+export interface BranchAccess {
+  id: number
+  name: string
+  code: string
+  pharmacy_id: number
+  is_default: boolean
+}
+
 export interface User {
   id: number
   email: string
@@ -43,6 +59,9 @@ export interface User {
   phone: string
   avatar: string | null
   role: Role | null
+  pharmacies: PharmacyAccess[]
+  branches: BranchAccess[]
+  permissions: string[]
   is_active: boolean
   date_joined: string
 }

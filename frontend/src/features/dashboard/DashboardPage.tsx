@@ -1,12 +1,11 @@
 import {
   Boxes,
-  Landmark,
-  Receipt,
-  ShoppingCart,
+  Building2,
+  CircleAlert,
+  Pill,
   Timer,
-  TrendingUp,
   Truck,
-  Wallet,
+  Users,
 } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Card, { CardHeader } from '@/components/ui/Card'
@@ -15,22 +14,17 @@ import Spinner from '@/components/ui/Spinner'
 import { useAuth } from '@/features/auth/AuthContext'
 import { formatDate } from '@/utils/format'
 import StatCard from './StatCard'
+import { useDashboardSummary } from './useDashboardSummary'
 import { useSystemHealth } from './useSystemHealth'
-
-const metrics = [
-  { label: 'Sales', icon: ShoppingCart, hint: 'From POS (sales module)' },
-  { label: 'Gross Profit', icon: TrendingUp, hint: 'Revenue − COGS' },
-  { label: 'Net Profit', icon: Landmark, hint: 'After expenses & tax' },
-  { label: 'Cash', icon: Wallet, hint: 'Cash & bank balances' },
-  { label: 'Receivable', icon: Truck, hint: 'Customer credit outstanding' },
-  { label: 'Payable', icon: Receipt, hint: 'Supplier dues' },
-  { label: 'Inventory Value', icon: Boxes, hint: 'At purchase cost' },
-  { label: 'Expiring Stock', icon: Timer, hint: 'Within 90 days', tone: 'warning' as const },
-]
 
 export default function DashboardPage() {
   const { user } = useAuth()
   const { data: health, isLoading, isError } = useSystemHealth()
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    isError: summaryError,
+  } = useDashboardSummary()
 
   return (
     <div className="space-y-6">
@@ -68,19 +62,51 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI cards — real values appear as modules come online */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {metrics.map((metric) => (
-          <StatCard
-            key={metric.label}
-            label={metric.label}
-            value={null}
-            hint={metric.hint}
-            icon={metric.icon}
-            tone={metric.tone}
-          />
-        ))}
-      </div>
+      {summaryLoading && (
+        <div className="flex min-h-32 items-center justify-center">
+          <Spinner className="h-8 w-8" />
+        </div>
+      )}
+      {summaryError && (
+        <div
+          role="alert"
+          className="rounded-lg bg-rose-50 p-4 text-sm text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+        >
+          Dashboard data could not be loaded from the API.
+        </div>
+      )}
+      {summary && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { label: 'Medicines', value: summary.medicines, icon: Pill },
+            { label: 'Stock units', value: summary.stock_units, icon: Boxes },
+            { label: 'Branches', value: summary.branches, icon: Building2 },
+            { label: 'Suppliers', value: summary.suppliers, icon: Truck },
+            { label: 'Customers', value: summary.customers, icon: Users },
+            {
+              label: 'Expiring batches',
+              value: summary.expiring_batches,
+              icon: Timer,
+              tone: 'warning' as const,
+            },
+            {
+              label: 'Expired batches',
+              value: summary.expired_batches,
+              icon: CircleAlert,
+              tone: 'warning' as const,
+            },
+            { label: 'All batches', value: summary.batches, icon: Boxes },
+          ].map((metric) => (
+            <StatCard
+              key={metric.label}
+              label={metric.label}
+              value={metric.value.toLocaleString()}
+              icon={metric.icon}
+              tone={metric.tone}
+            />
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
@@ -90,8 +116,8 @@ export default function DashboardPage() {
           />
           <div className="p-5">
             <EmptyState
-              title="Charts start when data exists"
-              description="Revenue, expense and profit series will be rendered from /api/v1/reports/ after sales and accounting go live. No fabricated samples are shown."
+              title="Sales and profit trends are unavailable"
+              description="The backend does not currently implement sales or expense transaction APIs. This dashboard does not fabricate financial figures."
             />
           </div>
         </Card>
@@ -103,8 +129,8 @@ export default function DashboardPage() {
           />
           <div className="p-5">
             <EmptyState
-              title="No branch data yet"
-              description="Branch comparisons will populate from live sales data once branches record transactions."
+              title={`${summary?.branches ?? 0} accessible branches`}
+              description="Branch sales comparisons require sales transactions, which are not implemented in the current backend."
             />
           </div>
         </Card>

@@ -4,6 +4,7 @@
 from django.db.models import QuerySet
 from rest_framework import generics, permissions
 
+from apps.accounts.tenancy import accessible_branches
 from .models import (
     BatchStatus,
     DosageForm,
@@ -112,7 +113,9 @@ class BatchListView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self) -> QuerySet:
-        qs = MedicineBatch.objects.all()
+        qs = MedicineBatch.objects.filter(
+            branch__in=accessible_branches(self.request.user)
+        )
         medicine = self.request.query_params.get("medicine")
         branch = self.request.query_params.get("branch")
         status = self.request.query_params.get("status")
@@ -125,7 +128,18 @@ class BatchListView(generics.ListCreateAPIView):
         return qs.select_related("medicine", "branch", "warehouse")
 
     def perform_create(self, serializer):
+        branch = serializer.validated_data["branch"]
+        if not accessible_branches(self.request.user).filter(pk=branch.pk).exists():
+            self.permission_denied(self.request)
         serializer.save(status=BatchStatus.AVAILABLE)
+
+    def perform_update(self, serializer):
+        branch = serializer.validated_data.get(
+            "branch", serializer.instance.branch
+        )
+        if not accessible_branches(self.request.user).filter(pk=branch.pk).exists():
+            self.permission_denied(self.request)
+        serializer.save()
 
 
 class BatchRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
@@ -133,9 +147,9 @@ class BatchRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self) -> QuerySet:
-        return MedicineBatch.objects.all().select_related(
-            "medicine", "branch", "warehouse"
-        )
+        return MedicineBatch.objects.filter(
+            branch__in=accessible_branches(self.request.user)
+        ).select_related("medicine", "branch", "warehouse")
 
 
 class DosageFormRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):

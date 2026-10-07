@@ -2,6 +2,7 @@
 from django.db.models import QuerySet
 from rest_framework import generics, permissions
 
+from apps.accounts.tenancy import accessible_pharmacies
 from .models import Pharmacy, PharmacyProfile
 from .serializers import PharmacySerializer
 
@@ -12,10 +13,7 @@ class PharmacyListView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self) -> QuerySet:
-        qs = Pharmacy.objects.all()
-        if self.request.user.is_superuser:
-            return qs
-        return qs.filter(owner=self.request.user)
+        return accessible_pharmacies(self.request.user)
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -28,10 +26,15 @@ class PharmacyRetrieveUpdateView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self) -> QuerySet:
-        return Pharmacy.objects.all().select_related("owner", "profile")
+        return accessible_pharmacies(self.request.user).select_related(
+            "owner", "profile"
+        )
 
-    def get_object(self):
-        obj = super().get_object()
-        if not (self.request.user.is_superuser or obj.owner == self.request.user):
+    def perform_update(self, serializer):
+        pharmacy = serializer.instance
+        if not (
+            self.request.user.is_superuser
+            or pharmacy.owner_id == self.request.user.pk
+        ):
             self.permission_denied(self.request)
-        return obj
+        serializer.save()

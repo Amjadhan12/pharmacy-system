@@ -115,6 +115,15 @@ class MedicineBatchSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate(self, attrs):
+        branch = attrs.get("branch", self.instance.branch if self.instance else None)
+        warehouse = attrs.get(
+            "warehouse", self.instance.warehouse if self.instance else None
+        )
+        if warehouse and branch and warehouse.branch_id != branch.pk:
+            raise serializers.ValidationError(
+                {"warehouse": "Warehouse must belong to the selected branch."}
+            )
+
         purchase_price = attrs.get("purchase_price")
         selling_price = attrs.get("selling_price")
         manufacture_date = attrs.get("manufacture_date")
