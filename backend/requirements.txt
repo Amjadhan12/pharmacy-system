@@ -1,0 +1,21 @@
+# Django/DRF core
+# Pinned to Django 5.2 LTS: the installed XAMPP MariaDB 10.4 requires <6.0
+# (Django 6.x requires MariaDB 10.11+).
+Django>=5.2,<6.0
+djangorestframework>=3.18
+djangorestframework-simplejwt>=5.5
+django-cors-headers>=4.9
+
+
+# Configuration
+python-dotenv>=1.2
+
+# Database driver (MySQL/MariaDB)
+mysqlclient>=2.3
+
+# Media handling
+Pillow>=12.3
+
+# Testing
+pytest>=9.1
+pytest-django>=4.14

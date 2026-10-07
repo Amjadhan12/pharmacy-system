@@ -1,0 +1,36 @@
+# Optional environment parity for CI / production-like runs.
+# Local development uses XAMPP's MariaDB on port 3306 — do NOT run both at
+# the same time (port conflict), or map a different host port below.
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: pharmafin-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: pharmafin
+      MYSQL_ROOT_PASSWORD: change-me
+      MYSQL_USER: pharmafin
+      MYSQL_PASSWORD: change-me
+      TZ: "UTC"
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - pharmafin_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pchange-me"]
+      interval: 10s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: pharmafin-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - pharmafin_redis_data:/data
+
+volumes:
+  pharmafin_mysql_data:
+  pharmafin_redis_data:

@@ -1,0 +1,38 @@
+# --- OS / IDE ---
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Environment secrets ---
+.env
+!.env.example
+
+# --- Django ---
+backend/staticfiles/
+backend/media/
+*.log
+
+# --- Node / frontend / mobile ---
+node_modules/
+dist/
+build/
+.expo/
+.metro-health-check*
+*.tsbuildinfo
+npm-debug.log*
+
+# --- Misc ---
+*.tmp
+docker-compose.override.yml

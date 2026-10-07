@@ -1,0 +1,1 @@
+# PharmaFin Django apps package.
