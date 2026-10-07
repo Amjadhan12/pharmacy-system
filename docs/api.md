@@ -80,14 +80,48 @@ GET /api/v1/health/
 
 Default DRF permission is `IsAuthenticated`; role checks use RBAC classes
 (`IsPharmacyOwner`, `IsAccountant`, `IsCashier`, …) which allow superusers
-through. Object/branch-level scoping arrives with the sales modules.
+through. Medicine entries are pharmacy-scoped; batches and inventory ledger
+rows are restricted to branches available to the authenticated user. Catalog
+mutations and stock movements require an authorized pharmacy staff role.
+
+## Medicine catalog and inventory
+
+All responses use the standard envelope above. Paginated list endpoints support
+`page` and `page_size`; supported list filters are described by each endpoint.
+
+| Method | Path | Description |
+|---|---|---|
+| GET/POST | `/medicines/categories/` | Search and manage medicine categories |
+| GET/PUT/PATCH/DELETE | `/medicines/categories/{id}/` | Read, edit or deactivate a category |
+| GET/POST | `/medicines/dosage-forms/` | Search and manage dosage forms |
+| GET/PUT/PATCH/DELETE | `/medicines/dosage-forms/{id}/` | Read, edit or deactivate a dosage form |
+| GET/POST | `/medicines/manufacturers/` | Search and manage manufacturers |
+| GET/PUT/PATCH/DELETE | `/medicines/manufacturers/{id}/` | Read, edit or deactivate a manufacturer |
+| GET/POST | `/medicines/medicines/` | Search, filter, order and create tenant medicines |
+| GET/PUT/PATCH/DELETE | `/medicines/medicines/{id}/` | Read, edit or deactivate a medicine |
+| GET/POST | `/medicines/batches/` | List/create branch-scoped batches; opening quantity is ledgered |
+| GET/PUT/PATCH/DELETE | `/medicines/batches/{id}/` | Read or edit a batch; quantity changes use movement endpoints |
+| GET | `/inventory/` | Search/filter/paginate batch inventory |
+| GET | `/inventory/low-stock/` | Database-calculated medicine stock below reorder levels |
+| GET | `/inventory/expiring/?days=30` | Positive-quantity batches expiring within the requested window |
+| GET | `/inventory/expired/` | Positive-quantity expired batches |
+| GET | `/inventory/fefo/{medicine_id}/?branch={id}&quantity={n}` | FEFO allocation preview for one accessible branch |
+| GET | `/inventory/transactions/` | Tenant-scoped stock ledger |
+| POST | `/inventory/transactions/stock/{type}/` | Record an authorized stock movement |
+| POST | `/inventory/transfers/` | Move stock between two same-tenant batches with paired ledger rows |
+| GET | `/dashboard/summary/` | Database-derived counts for accessible pharmacy/branch data |
+
+Medicine filters include `search`, `category`, `manufacturer`, `route`,
+`prescription_required`, `is_active`, and `pharmacy`. Search covers generic and
+brand names, barcode, GTIN, category and manufacturer. Inventory filters
+include `search`, `branch`, `warehouse`, `category`, `medicine`, `status`, and
+`low_stock=true`. FEFO excludes expired, empty and unavailable batches and
+orders eligible stock by expiry date, then batch ID.
 
 ## Planned endpoint groups (future sprints)
 
 ```
-/api/v1/branches/        /api/v1/inventory/     /api/v1/sales/
-/api/v1/medicines/       /api/v1/purchases/     /api/v1/suppliers/
-/api/v1/customers/       /api/v1/accounting/    /api/v1/expenses/
+/api/v1/sales/           /api/v1/purchases/     /api/v1/expenses/
 /api/v1/payments/        /api/v1/prescriptions/ /api/v1/doctors/
 /api/v1/locations/       /api/v1/chat/          /api/v1/ai/
 /api/v1/reports/

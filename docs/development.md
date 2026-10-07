@@ -17,6 +17,7 @@ cd backend
 pip install -r requirements.txt          # already done in this workspace
 python manage.py migrate                 # creates all tables
 python manage.py check                   # system checks
+python manage.py seed_demo               # idempotent pharmacy/catalog/stock data
 python manage.py runserver 127.0.0.1:8000
 ```
 
@@ -84,9 +85,10 @@ python -m pytest          # pytest-django (settings: config.settings.development
 python manage.py test tests
 ```
 
-Current coverage: health, JWT auth, RBAC permissions, core models
-(roles/pharmacies/branches), medicine catalog + batch constraints (FEFO
-ordering, price/expiry validation, uniqueness).
+Current coverage: health, JWT auth, RBAC permissions, tenant access,
+pharmacy-scoped medicine catalog, batch constraints, stock ledger/movements,
+paired transfers, FEFO allocation, expiry/low-stock calculations and dashboard
+summary.
 
 ## Environment notes for this machine
 

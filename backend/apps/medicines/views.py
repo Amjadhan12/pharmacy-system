@@ -107,7 +107,9 @@ class MedicineListView(generics.ListCreateAPIView):
                 | Q(manufacturer__name__icontains=search)
             )
         pharmacy = self.request.query_params.get("pharmacy")
-        if pharmacy and pharmacies.filter(pk=pharmacy).exists():
+        if pharmacy:
+            if not pharmacies.filter(pk=pharmacy).exists():
+                raise PermissionDenied("You cannot view this pharmacy's medicines.")
             qs = qs.filter(pharmacy_id=pharmacy)
         ordering = self.request.query_params.get("ordering")
         if ordering in {

@@ -68,10 +68,10 @@ class MedicineSerializer(serializers.ModelSerializer):
         queryset=MedicineCategory.objects.filter(is_active=True)
     )
     manufacturer = serializers.PrimaryKeyRelatedField(
-        queryset=Manufacturer.objects.all(), required=False
+        queryset=Manufacturer.objects.filter(is_active=True), required=False
     )
     dosage_form = serializers.PrimaryKeyRelatedField(
-        queryset=DosageForm.objects.all()
+        queryset=DosageForm.objects.filter(is_active=True)
     )
 
     class Meta:

@@ -27,6 +27,7 @@ pip install -r requirements.txt
 cp .env.example .env          # adjust if your XAMPP DB differs
 python manage.py migrate
 python manage.py check
+python manage.py seed_demo
 python manage.py create_superuser owner@pharmacy.local
 python manage.py runserver 127.0.0.1:8000
 ```
@@ -65,8 +66,9 @@ Type-check: `npx tsc --noEmit`
 
 - ✅ Accounts: users/roles/permissions/branch assignments/audit login activity
 - ✅ Pharmacies, branches, warehouses, medicine catalog + inventory batches
+- ✅ Tenant-scoped medicine APIs, inventory ledger, stock movements and FEFO availability
 - ✅ JWT login, per-role permissions, RBAC DRF classes
-- ✅ Dashboard & system health, auth login flow
+- ✅ Database-backed dashboard, medicine details, inventory filters and transaction history
 - ✅ Mobile: navigation structure, auth screens, health hook (earlier sprints)
 
 ## The MariaDB 10.4 shim (local development only)
@@ -81,6 +83,6 @@ Remove it and upgrade to Django ≥ 6.0 once the DB server is ≥ 10.11.
 
 ## Pending (roadmap)
 
-Inventory transactions (FEFO), suppliers & purchasing, POS, double-entry
-accounting, expenses/cash-bank, prescriptions, reports, chat, locations, AI
-service layer + assistants, production hardening.
+Purchasing/receiving, POS/sales, double-entry business workflows, expenses and
+cash-bank transactions, prescriptions, reports, chat, locations, AI service
+layer + assistants, production hardening.

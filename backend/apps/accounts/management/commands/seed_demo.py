@@ -266,6 +266,7 @@ class Command(BaseCommand):
                     "inventory@pharmafin.local",
                     "accountant@pharmafin.local",
                     "cashier@pharmafin.local",
+                    "doctor@pharmafin.local",
                 ]:
                     UserBranch.objects.get_or_create(
                         user=created_users[email],
