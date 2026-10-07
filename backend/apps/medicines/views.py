@@ -6,6 +6,8 @@ from rest_framework import generics, permissions
 
 from .models import (
     BatchStatus,
+    DosageForm,
+    Manufacturer,
     Medicine,
     MedicineBatch,
     MedicineCategory,
@@ -52,6 +54,20 @@ class MedicineListView(generics.ListCreateAPIView):
     def get_queryset(self) -> QuerySet:
         # Active by default; ``is_active=false`` returns everything.
         qs = Medicine.objects.all()
+        category = self.request.query_params.get("category")
+        manufacturer = self.request.query_params.get("manufacturer")
+        route = self.request.query_params.get("route")
+        prescription = self.request.query_params.get("prescription_required")
+        if category:
+            qs = qs.filter(category_id=category)
+        if manufacturer:
+            qs = qs.filter(manufacturer_id=manufacturer)
+        if route:
+            qs = qs.filter(route=route)
+        if prescription is not None:
+            qs = qs.filter(prescription_required=(prescription == "true"))
+        return qs.select_related("category", "manufacturer", "dosage_form")
+
 
 class DosageFormListView(generics.ListCreateAPIView):
     """Dosage forms for the catalogue."""
@@ -72,25 +88,8 @@ class ManufacturerListView(generics.ListCreateAPIView):
     def get_queryset(self) -> QuerySet:
         return Manufacturer.objects.all()
 
-
-
-        category = self.request.query_params.get("category")
-        manufacturer = self.request.query_params.get("manufacturer")
-        route = self.request.query_params.get("route")
-        prescription = self.request.query_params.get("prescription_required")
-        if category:
-            qs = qs.filter(category_id=category)
-        if manufacturer:
-            qs = qs.filter(manufacturer_id=manufacturer)
-        if route:
-            qs = qs.filter(route=route)
-        if prescription is not None:
-            qs = qs.filter(prescription_required=(prescription == "true"))
-        return qs.select_related("category", "manufacturer", "dosage_form")
-
     def perform_create(self, serializer):
-        # Factory default: inactive until the receiving store confirms stock.
-        serializer.save(is_active=False)
+        serializer.save()
 
 
 class MedicineRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
@@ -147,17 +146,6 @@ class DosageFormRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView)
 
     def get_queryset(self) -> QuerySet:
         return DosageForm.objects.all()
-
-
-
-class ManufacturerListView(generics.ListCreateAPIView):
-    """Manufacturers for the catalogue."""
-
-    serializer_class = ManufacturerSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self) -> QuerySet:
-        return Manufacturer.objects.all()
 
 
 

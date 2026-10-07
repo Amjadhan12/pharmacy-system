@@ -25,7 +25,7 @@ class BranchSerializer(serializers.ModelSerializer):
             "closing_time",
             "manager",
             "is_default",
-            "is_active",
+            "status",
             "created_at",
             "updated_at",
         ]

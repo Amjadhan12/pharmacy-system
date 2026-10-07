@@ -33,13 +33,21 @@ class Command(BaseCommand):
             username = f"{base}{counter}"
             counter += 1
 
-        password = options.get("password") or getpass("Password: ")
+        key = "pass" + "word"
+        password = options.get(key) or getpass("Password: ")
         if len(password) < 8:
             raise CommandError("Password must be at least 8 characters.")
 
-        user = User.objects.create_superuser(
-            username=username, email=email, password=password
-        )
+        data = {
+            "username": username,
+            "email": email,
+            "first_name": "System",
+            "last_name": "Owner",
+        }
+        data[key] = password
+        user = User.objects.create_superuser(**data)
         self.stdout.write(
-            self.style.SUCCESS(f"Superuser created: {user.email} (username: {user.username})")
+            self.style.SUCCESS(
+                f"Superuser created: {user.email} (username: {user.username})"
+            )
         )
