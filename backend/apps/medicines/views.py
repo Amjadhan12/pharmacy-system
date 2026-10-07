@@ -1,5 +1,6 @@
 """Medicine catalog, dosage forms, manufacturers and inventory batches."""
 
+
 from django.db.models import QuerySet
 from rest_framework import generics, permissions
 
@@ -32,9 +33,7 @@ class CategoryListView(generics.ListCreateAPIView):
         return qs.select_related("parent")
 
 
-class CategoryRetrieveUpdateDestroyView(
-    generics.RetrieveUpdateDestroyAPIView
-):
+class CategoryRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """Single category: edit, retire or reactivate."""
 
     serializer_class = MedicineCategorySerializer
@@ -42,14 +41,6 @@ class CategoryRetrieveUpdateDestroyView(
 
     def get_queryset(self) -> QuerySet:
         return MedicineCategory.objects.all()
-
-
-    def get_queryset(self) -> QuerySet:
-        qs = DosageForm.objects.all()
-        is_active = self.request.query_params.get("is_active")
-        if is_active is not None:
-            qs = qs.filter(is_active=is_active == "true")
-        return qs
 
 
 class MedicineListView(generics.ListCreateAPIView):
@@ -61,6 +52,28 @@ class MedicineListView(generics.ListCreateAPIView):
     def get_queryset(self) -> QuerySet:
         # Active by default; ``is_active=false`` returns everything.
         qs = Medicine.objects.all()
+
+class DosageFormListView(generics.ListCreateAPIView):
+    """Dosage forms for the catalogue."""
+
+    serializer_class = DosageFormSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self) -> QuerySet:
+        return DosageForm.objects.all()
+
+
+class ManufacturerListView(generics.ListCreateAPIView):
+    """Manufacturers for the catalogue."""
+
+    serializer_class = ManufacturerSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self) -> QuerySet:
+        return Manufacturer.objects.all()
+
+
+
         category = self.request.query_params.get("category")
         manufacturer = self.request.query_params.get("manufacturer")
         route = self.request.query_params.get("route")
@@ -121,18 +134,36 @@ class BatchRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self) -> QuerySet:
-        return MedicineBatch.objects.all().select_related("medicine", "branch", "warehouse")
+        return MedicineBatch.objects.all().select_related(
+            "medicine", "branch", "warehouse"
+        )
+
 
 class DosageFormRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    """Single dosage form: list, edit, retire or reactivate."""
+
     serializer_class = DosageFormSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self) -> QuerySet:
+        return DosageForm.objects.all()
+
+
+
+class ManufacturerListView(generics.ListCreateAPIView):
+    """Manufacturers for the catalogue."""
+
+    serializer_class = ManufacturerSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self) -> QuerySet:
         return Manufacturer.objects.all()
 
 
+
 class ManufacturerRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    """Single manufacturer: list, edit, retire or reactivate."""
+
     serializer_class = ManufacturerSerializer
     permission_classes = [permissions.IsAuthenticated]
 
